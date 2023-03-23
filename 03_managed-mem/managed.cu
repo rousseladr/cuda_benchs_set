@@ -15,8 +15,6 @@
 
 #include "../common/common.h"
 
-#define ITER 1000
-
 __global__ void kernel(int* y, int* a, int* b)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -45,14 +43,18 @@ int main(int argc, char *argv[])
   double size_in_kbytes = size_in_mbytes*1000;
   double size_in_bytes = size_in_kbytes*1000;
   uint64_t N = (size_in_bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t);
+  int niter = 1000;
 
   int opt;
-  while ((opt = getopt(argc, argv, "vhs:")) != -1)
+  while ((opt = getopt(argc, argv, "vhsi:")) != -1)
   {
     switch (opt)
     {
       case 's':
         size_in_mbytes = (uint64_t)atoi(optarg);
+        break;
+      case 'i':
+        niter = (int)atoi(optarg);
         break;
       case 'v':
         verbose = true;
@@ -186,7 +188,7 @@ usage:
 
 
       t0 = get_elapsedtime();
-	    for(j=0; j<ITER; j++)
+	    for(j=0; j < niter; j++)
 	    {
       	cudaMemPrefetchAsync(c, N * sizeof(uint64_t), device, NULL);
 	    	kernel<<<numBlocks, blockSize>>>(c, a, b);
@@ -196,13 +198,13 @@ usage:
       t1 = get_elapsedtime();
 
       t2 = get_elapsedtime();
-	    for(j=0; j<ITER; j++)
+	    for(j=0; j < niter; j++)
 	    {
 	    	kernel<<<numBlocks, blockSize>>>(c, a, b);
 	    	cudaDeviceSynchronize();
 	    }
 
- 	    for(j=0; j<ITER; j++)
+ 	    for(j=0; j < niter; j++)
 	    {
 	    	reduction(res2, c, N);
 	    }
