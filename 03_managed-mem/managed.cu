@@ -40,12 +40,10 @@ int main(int argc, char *argv[])
   int cpu = -1;
   int s, j;
   uint64_t size_in_mbytes = 100;
-  double size_in_bytes = size_in_mbytes * 1E6;
-  uint64_t N = (size_in_bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t);
   int niter = 1000;
 
   int opt;
-  while ((opt = getopt(argc, argv, "vhsi:")) != -1)
+  while ((opt = getopt(argc, argv, "s:i:vh")) != -1)
   {
     switch (opt)
     {
@@ -75,6 +73,9 @@ usage:
     fprintf(stdout, "numa_explicit.exe -s <arg> && python3 plot.py <arg>\n");
     exit(EXIT_SUCCESS);
   }
+
+  double size_in_bytes = size_in_mbytes * 1E6;
+  uint64_t N = (size_in_bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t);
 
   // Setup phase
   cpu_set_t cpuset;
