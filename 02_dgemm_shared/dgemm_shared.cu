@@ -9,6 +9,8 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
+#include "../common/common.h"
+
 #define BLOCK_WIDTH 32
 #define TILE_WIDTH 32
 #define TAILLE 4096
@@ -74,8 +76,12 @@ int main(int argc, char** argv)
 	dim3 gridSize(nbBlocks, nbBlocks);
 	dim3 blockSize(BLOCK_WIDTH, BLOCK_WIDTH);
 
+  fprintf(stdout, "N = %d\n", N);
+
 	float *A, *B, *C;
 	float *d_A, *d_B, *d_C;
+
+  double t0 = 0., t1 = 0., duration = 0.;
 
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
@@ -102,18 +108,27 @@ int main(int argc, char** argv)
 	cudaMemcpy(d_B, B, sizeof(float) * N * N, cudaMemcpyHostToDevice);
 	cudaMemcpy(d_C, C, sizeof(float) * N * N, cudaMemcpyHostToDevice);
 
-	cudaEventRecord(start);
-	//MulMatrixKernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, N);
+  t0 = get_elapsedtime();
+
 	MulMatrixShare<<<gridSize, blockSize>>>(d_A, d_B, d_C, N);
-	cudaEventRecord(stop);
+  cudaDeviceSynchronize();
+
+  t1 = get_elapsedtime();
+
+  duration = (t1 - t0);
+	printf("Shared Mem: %lf s\n", duration);
+
+  t0 = get_elapsedtime();
+
+	MulMatrixKernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, N);
+  cudaDeviceSynchronize();
+
+  t1 = get_elapsedtime();
 
 	cudaMemcpy(C, d_C, sizeof(float) * N * N, cudaMemcpyDeviceToHost);
 
-	cudaEventSynchronize(stop);
-	float milliseconds = 0;
-	cudaEventElapsedTime(&milliseconds, start, stop);
-	printf("Matrice %dx%d\n\tTemps: %f s\n", N, N, milliseconds/1000);
-	//printf("%f", milliseconds/1000);
+  duration = (t1 - t0);
+	printf("No Shared Mem: %lf s\n", duration);
 
 	cudaFree(d_A);
 	cudaFree(d_B);

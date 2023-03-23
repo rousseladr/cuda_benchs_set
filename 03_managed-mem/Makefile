@@ -1,6 +1,6 @@
 CC=nvcc
 CFLAGS=-O3
-LDFLAGS=
+LDFLAGS=-lpthread -lnuma
 
 EXE=managed.exe
 

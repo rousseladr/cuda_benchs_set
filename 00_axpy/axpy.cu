@@ -57,6 +57,7 @@ int main(int argc, char **argv)
     dim3  dimGrid((N + dimBlock.x - 1)/dimBlock.x, 1, 1);
     t0 = get_elapsedtime();
     axpy<<<dimGrid , dimBlock>>>(alpha, d_a, d_b, d_c, N);
+    cudaDeviceSynchronize();
     t1 = get_elapsedtime();
 
     duration = (t1 - t0);

@@ -76,8 +76,8 @@ int main(int argc, char** argv){
 
   double t0 = 0., t1 = 0., duration = 0.;
 
-  N = (argc < 2)?1000:atoi(argv[1]);
-  fprintf(stdout, "Matrix Multiplication\n  Size: %dx%d\n", N, N);
+  N = (argc < 2)?1024:atoi(argv[1]);
+  fprintf(stdout, "N = %d\n", N);
 
   // Memory allocation
   A = (double*) malloc(sizeof(double) * N * N);
@@ -105,16 +105,20 @@ int main(int argc, char** argv){
   dim3 gridSize(nbBlocks, nbBlocks);
   dim3 blockSize(BLOCK_WIDTH, BLOCK_WIDTH);
 
-  cudaEventRecord(start);
+  t0 = get_elapsedtime();
+
   MulMatrixKernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, N);
-  cudaEventRecord(stop);
+  cudaDeviceSynchronize();
+
+  t1 = get_elapsedtime();
 
   cudaMemcpy(C, d_C, sizeof(double) * N * N, cudaMemcpyDeviceToHost);
 
-  cudaEventSynchronize(stop);
-  float milliseconds = 0;
-  cudaEventElapsedTime(&milliseconds, start, stop);
-  printf("Matrice %dx%d\n\tTemps: %f s\n", N, N, milliseconds/1000);
+  duration = (t1 - t0);
+
+  uint64_t nb_op = N * N * N;
+  fprintf(stdout, "cuda:time: %lfs\n", duration);
+  fprintf(stdout, "cuda:mflops: %.2f\n", (nb_op / duration)*1E-6);
 
   // Compute multiplication
   t0 = get_elapsedtime();
@@ -123,10 +127,8 @@ int main(int argc, char** argv){
 
   // Pretty print
   duration = (t1 - t0);
-  uint64_t nb_op = N * N * N;
-  fprintf(stdout, "Performance results: \n");
-  fprintf(stdout, "  Time: %lf s\n", duration);
-  fprintf(stdout, "  MFlops: %.2f\n", (nb_op / duration)*1E-6);
+  fprintf(stdout, "seq:time: %lfs\n", duration);
+  fprintf(stdout, "seq:mflops: %.2f\n", (nb_op / duration)*1E-6);
 
   free(A);
   free(B);
