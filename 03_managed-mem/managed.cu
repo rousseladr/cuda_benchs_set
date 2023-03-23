@@ -40,8 +40,7 @@ int main(int argc, char *argv[])
   int cpu = -1;
   int s, j;
   uint64_t size_in_mbytes = 100;
-  double size_in_kbytes = size_in_mbytes*1000;
-  double size_in_bytes = size_in_kbytes*1000;
+  double size_in_bytes = size_in_mbytes * 1E6;
   uint64_t N = (size_in_bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t);
   int niter = 1000;
 
@@ -90,11 +89,11 @@ usage:
   cudaGetDeviceCount(&gpucount);
 
   int *tgpu = (int*)malloc(sizeof(int) * numcores * gpucount);
-  double *dummy = (double*)malloc(sizeof(double) * numcores * gpucount);
-  double *grouped = (double*)malloc(sizeof(double) * numcores * gpucount);
+  double *pingpong = (double*)malloc(sizeof(double) * numcores * gpucount);
+  double *batch = (double*)malloc(sizeof(double) * numcores * gpucount);
   memset(tgpu, -1, sizeof(int) * numcores * gpucount);
-  memset(dummy, 0, sizeof(int) * numcores * gpucount);
-  memset(grouped, 0, sizeof(int) * numcores * gpucount);
+  memset(pingpong, 0, sizeof(int) * numcores * gpucount);
+  memset(batch, 0, sizeof(int) * numcores * gpucount);
 
   int coreId = 0;
 
@@ -214,11 +213,11 @@ usage:
       duration2 = (t3 - t2);
       if(verbose)
       {
-	      printf("time ping-pong = %lf | time grouped = %lf\n", duration, duration2);
+	      printf("time ping-pong = %lf | time batch = %lf\n", duration, duration2);
       }
 
-      dummy[coreId * gpucount + deviceId] = duration;
-      grouped[coreId * gpucount + deviceId] = duration2;
+      pingpong[coreId * gpucount + deviceId] = duration;
+      batch[coreId * gpucount + deviceId] = duration2;
 
       cudaFree(a);
       cudaFree(b);
@@ -237,19 +236,19 @@ usage:
     exit(EXIT_FAILURE);
   }
 
-  fprintf(outputFile, "core\tgpu\tPing-Pong\tGrouped\n");
+  fprintf(outputFile, "core\tgpu\tPing-Pong\tBatch\n");
   for(int i = 0; i < numcores; ++i)
   {
     for(int d = 0; d < gpucount; ++d)
     {
-      fprintf(outputFile, "%d\t%d\t%lf\t%lf\n", i, tgpu[i * gpucount + d], dummy[i * gpucount + d], grouped[i * gpucount + d]);
+      fprintf(outputFile, "%d\t%d\t%lf\t%lf\n", i, tgpu[i * gpucount + d], pingpong[i * gpucount + d], batch[i * gpucount + d]);
     }
   }
 
   fclose(outputFile);
   free(tgpu);
-  free(dummy);
-  free(grouped);
+  free(pingpong);
+  free(batch);
 
 	return 0;
 }
