@@ -15,21 +15,21 @@
 
 #include "../common/common.h"
 
-__global__ void kernel(int* y, int* a, int* b)
+__global__ void kernel(uint64_t* y, uint64_t* a, uint64_t* b)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	y[i] = a[i] * b[i];
 }
 
-__host__ void reduction(uint64_t resultat, int * a, uint64_t N)
+__host__ void reduction(uint64_t *resultat, uint64_t * a, uint64_t N)
 {
 
 	int i;
-  resultat = (uint64_t)0;
+  *resultat = (uint64_t)0;
 	for(i=0; i< N; i++)
   {
-    resultat += a[i];
+    *resultat += a[i];
   }
 }
 
@@ -92,9 +92,13 @@ usage:
   int *tgpu = (int*)malloc(sizeof(int) * numcores * gpucount);
   double *pingpong = (double*)malloc(sizeof(double) * numcores * gpucount);
   double *batch = (double*)malloc(sizeof(double) * numcores * gpucount);
+  double *pasync = (double*)malloc(sizeof(double) * numcores * gpucount);
+  double *basync = (double*)malloc(sizeof(double) * numcores * gpucount);
   memset(tgpu, -1, sizeof(int) * numcores * gpucount);
   memset(pingpong, 0, sizeof(int) * numcores * gpucount);
   memset(batch, 0, sizeof(int) * numcores * gpucount);
+  memset(pasync, 0, sizeof(int) * numcores * gpucount);
+  memset(basync, 0, sizeof(int) * numcores * gpucount);
 
   int coreId = 0;
 
@@ -158,71 +162,188 @@ usage:
       }
       tgpu[coreId * gpucount + deviceId] = deviceId;
 
-	    int* a; int* b; int* c;
+	    uint64_t* a; uint64_t* b; uint64_t* c;
 
 	    int j;
 	    int i;
-      uint64_t res1, res2;
+      uint64_t res1 = 0x0, res2 = 0x0, res3 = 0x0, res4 = 0x0;
       double t0 = 0., t1 = 0., duration = 0.;
       double t2 = 0., t3 = 0., duration2 = 0.;
+      double t4 = 0., t5 = 0., duration3 = 0.;
+      double t6 = 0., t7 = 0., duration4 = 0.;
 
 	    cudaMallocManaged(&a, N * sizeof(uint64_t));
 	    cudaMallocManaged(&b, N * sizeof(uint64_t));
 	    cudaMallocManaged(&c, N * sizeof(uint64_t));
 
+	    uint64_t* t3_ha;
+	    uint64_t* t3_hb;
+	    uint64_t* t3_hc;
+
+	    uint64_t* t3_da;
+	    uint64_t* t3_db;
+	    uint64_t* t3_dc;
+
+      cudaMallocHost(&t3_ha, N * sizeof(uint64_t));
+      cudaMallocHost(&t3_hb, N * sizeof(uint64_t));
+      cudaMallocHost(&t3_hc, N * sizeof(uint64_t));
+
+      cudaMalloc(&t3_da, N * sizeof(uint64_t));
+      cudaMalloc(&t3_db, N * sizeof(uint64_t));
+      cudaMalloc(&t3_dc, N * sizeof(uint64_t));
+
+      cudaStream_t stream1;
+      cudaStreamCreate(&stream1);
+
 	    for(i=0; i < N; i++)
       {
-        a[i] = i;
-        b[i] = 2;
-        c[i] = 0;
+        a[i] = t3_ha[i] = i;
+        b[i] = t3_hb[i] = 2;
+        c[i] = t3_hc[i] = 0;
       }
 
-      // Prefetch the data to the GPU
+      // Prefetch the data to the CPU
       int device = -1;
       cudaGetDevice(&device);
-      cudaMemPrefetchAsync(a, N * sizeof(uint64_t), device, NULL);
-      cudaMemPrefetchAsync(b, N * sizeof(uint64_t), device, NULL);
+      cudaMemPrefetchAsync(a, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(b, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(c, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
 
       int blockSize = 256;
       int numBlocks = (N + blockSize - 1) / blockSize;
 
+      cudaDeviceSynchronize();
 
+      // TEST 1
+      // Ping-Pong at each test iteration CPU <-> GPU with CUDA Managed Memory
       t0 = get_elapsedtime();
 	    for(j=0; j < niter; j++)
 	    {
-      	cudaMemPrefetchAsync(c, N * sizeof(uint64_t), device, NULL);
 	    	kernel<<<numBlocks, blockSize>>>(c, a, b);
-	    	cudaDeviceSynchronize();
-	    	reduction(res1, c, N);
+	    	reduction(&res1, c, N);
 	    }
       t1 = get_elapsedtime();
 
+      cudaMemPrefetchAsync(a, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(b, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(c, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaDeviceSynchronize();
+
+      // TEST 2
+      // Batch Reduction all compute on GPU THEN reduction on GPU with CUDA Managed Memory
       t2 = get_elapsedtime();
 	    for(j=0; j < niter; j++)
 	    {
 	    	kernel<<<numBlocks, blockSize>>>(c, a, b);
-	    	cudaDeviceSynchronize();
 	    }
 
  	    for(j=0; j < niter; j++)
 	    {
-	    	reduction(res2, c, N);
+	    	reduction(&res2, c, N);
 	    }
       t3 = get_elapsedtime();
 
-      duration = (t1 - t0);
+      cudaDeviceSynchronize();
+
+      // TEST 3
+      // Ping-Pong at each test iteration CPU <-> GPU with Explicit GPU allocation (cudaMalloc) + Asynchronous cuda Memory copies
+      t4 = get_elapsedtime();
+
+      cudaMemcpyAsync(t3_da, t3_ha, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_db, t3_hb, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+
+	    for(j=0; j < niter; j++)
+	    {
+        cudaMemcpyAsync(t3_dc, t3_hc, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+
+	    	kernel<<<numBlocks, blockSize>>>(t3_dc, t3_da, t3_db);
+
+        cudaMemcpyAsync(t3_hc, t3_dc, N * sizeof(uint64_t), cudaMemcpyDeviceToHost);
+        cudaStreamSynchronize(0);
+
+	    	reduction(&res3, t3_hc, N);
+	    }
+
+      t5 = get_elapsedtime();
+
+      cudaDeviceSynchronize();
+
+      // TEST 4
+      // Batch Reduction all compute on GPU THEN reduction on GPU with Explicit GPU allocation (cudaMalloc) + Asynchronous cuda Memory copies
+      t6 = get_elapsedtime();
+
+      cudaMemcpyAsync(t3_da, t3_ha, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_db, t3_hb, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_dc, t3_hc, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+
+	    for(j=0; j < niter; j++)
+	    {
+	    	kernel<<<numBlocks, blockSize>>>(t3_dc, t3_da, t3_db);
+	    }
+
+      cudaMemcpyAsync(t3_hc, t3_dc, N * sizeof(uint64_t), cudaMemcpyDeviceToHost);
+      cudaStreamSynchronize(0);
+
+ 	    for(j=0; j < niter; j++)
+	    {
+	    	reduction(&res4, t3_hc, N);
+	    }
+
+      t7 = get_elapsedtime();
+
+      cudaDeviceSynchronize();
+
+      if((res1 != res2) && (res2 != res3) && (res3 != res4))
+      {
+        fprintf(stderr, "Fatal Error...\n");
+
+        cudaFree(a);
+        cudaFree(b);
+        cudaFree(c);
+
+        cudaFree(t3_da);
+        cudaFree(t3_db);
+        cudaFree(t3_dc);
+
+        cudaFreeHost(t3_ha);
+        cudaFreeHost(t3_hb);
+        cudaFreeHost(t3_hc);
+
+        free(tgpu);
+        free(pingpong);
+        free(batch);
+        free(pasync);
+        free(basync);
+
+        exit(EXIT_FAILURE);
+      }
+
+      duration  = (t1 - t0);
       duration2 = (t3 - t2);
+      duration3 = (t5 - t4);
+      duration4 = (t7 - t6);
+
       if(verbose)
       {
-	      printf("time ping-pong = %lf | time batch = %lf\n", duration, duration2);
+	      printf("time ping-pong = %lf | time batch = %lf | time ping-pong memcpyAsync = %lf | time Batch memcpyAsync = %lf\n", duration, duration2, duration3, duration4);
       }
 
       pingpong[coreId * gpucount + deviceId] = duration;
       batch[coreId * gpucount + deviceId] = duration2;
+      pasync[coreId * gpucount + deviceId] = duration3;
+      basync[coreId * gpucount + deviceId] = duration4;
 
       cudaFree(a);
       cudaFree(b);
       cudaFree(c);
+
+      cudaFree(t3_da);
+      cudaFree(t3_db);
+      cudaFree(t3_dc);
+
+      cudaFreeHost(t3_ha);
+      cudaFreeHost(t3_hb);
+      cudaFreeHost(t3_hc);
     }
     coreId += 1;
   }
@@ -237,12 +358,12 @@ usage:
     exit(EXIT_FAILURE);
   }
 
-  fprintf(outputFile, "core\tgpu\tPing-Pong\tBatch\n");
+  fprintf(outputFile, "core\tgpu\tPing-Pong\tBatch\tMemcpyAsync-PingPong\tMemcpyAsync-Batch\n");
   for(int i = 0; i < numcores; ++i)
   {
     for(int d = 0; d < gpucount; ++d)
     {
-      fprintf(outputFile, "%d\t%d\t%lf\t%lf\n", i, tgpu[i * gpucount + d], pingpong[i * gpucount + d], batch[i * gpucount + d]);
+      fprintf(outputFile, "%d\t%d\t%lf\t%lf\t%lf\t%lf\n", i, tgpu[i * gpucount + d], pingpong[i * gpucount + d], batch[i * gpucount + d], pasync[i * gpucount + d], basync[i * gpucount +d]);
     }
   }
 
@@ -250,6 +371,8 @@ usage:
   free(tgpu);
   free(pingpong);
   free(batch);
+  free(pasync);
+  free(basync);
 
 	return 0;
 }
