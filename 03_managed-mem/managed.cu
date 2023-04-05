@@ -15,18 +15,18 @@
 
 #include "../common/common.h"
 
-__global__ void kernel(uint64_t* y, uint64_t* a, uint64_t* b)
+__global__ void kernel(double* y, double* a, double* b)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	y[i] = a[i] * b[i];
 }
 
-__host__ void reduction(uint64_t *resultat, uint64_t * a, uint64_t N)
+__host__ void reduction(double *resultat, double * a, double N)
 {
 
 	int i;
-  *resultat = (uint64_t)0;
+  *resultat = (double)0;
 	for(i=0; i< N; i++)
   {
     *resultat += a[i];
@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
     switch (opt)
     {
       case 's':
-        size_in_mbytes = (uint64_t)atoi(optarg);
+        size_in_mbytes = (double)atoi(optarg);
         break;
       case 'i':
         niter = (int)atoi(optarg);
@@ -74,8 +74,8 @@ usage:
     exit(EXIT_SUCCESS);
   }
 
-  double size_in_bytes = size_in_mbytes * 1E6;
-  uint64_t N = (size_in_bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t);
+  uint64_t size_in_bytes = size_in_mbytes * 1E6;
+  uint64_t N = (size_in_bytes + sizeof(double) - 1) / sizeof(double);
 
   // Setup phase
   cpu_set_t cpuset;
@@ -162,52 +162,52 @@ usage:
       }
       tgpu[coreId * gpucount + deviceId] = deviceId;
 
-	    uint64_t* a; uint64_t* b; uint64_t* c;
+	    double* a; double* b; double* c;
 
 	    int j;
 	    int i;
-      uint64_t res1 = 0x0, res2 = 0x0, res3 = 0x0, res4 = 0x0;
-      double t0 = 0., t1 = 0., duration = 0.;
+      double res1 = 0x0, res2 = 0x0, res3 = 0x0, res4 = 0x0;
+      double t0 = 0., t1 = 0., duration  = 0.;
       double t2 = 0., t3 = 0., duration2 = 0.;
       double t4 = 0., t5 = 0., duration3 = 0.;
       double t6 = 0., t7 = 0., duration4 = 0.;
 
-	    cudaMallocManaged(&a, N * sizeof(uint64_t));
-	    cudaMallocManaged(&b, N * sizeof(uint64_t));
-	    cudaMallocManaged(&c, N * sizeof(uint64_t));
+	    cudaMallocManaged(&a, N * sizeof(double));
+	    cudaMallocManaged(&b, N * sizeof(double));
+	    cudaMallocManaged(&c, N * sizeof(double));
 
-	    uint64_t* t3_ha;
-	    uint64_t* t3_hb;
-	    uint64_t* t3_hc;
+	    double* t3_ha;
+	    double* t3_hb;
+	    double* t3_hc;
 
-	    uint64_t* t3_da;
-	    uint64_t* t3_db;
-	    uint64_t* t3_dc;
+	    double* t3_da;
+	    double* t3_db;
+	    double* t3_dc;
 
-      cudaMallocHost(&t3_ha, N * sizeof(uint64_t));
-      cudaMallocHost(&t3_hb, N * sizeof(uint64_t));
-      cudaMallocHost(&t3_hc, N * sizeof(uint64_t));
+      cudaMallocHost(&t3_ha, N * sizeof(double));
+      cudaMallocHost(&t3_hb, N * sizeof(double));
+      cudaMallocHost(&t3_hc, N * sizeof(double));
 
-      cudaMalloc(&t3_da, N * sizeof(uint64_t));
-      cudaMalloc(&t3_db, N * sizeof(uint64_t));
-      cudaMalloc(&t3_dc, N * sizeof(uint64_t));
+      cudaMalloc(&t3_da, N * sizeof(double));
+      cudaMalloc(&t3_db, N * sizeof(double));
+      cudaMalloc(&t3_dc, N * sizeof(double));
 
       cudaStream_t stream1;
       cudaStreamCreate(&stream1);
 
 	    for(i=0; i < N; i++)
       {
-        a[i] = t3_ha[i] = i;
-        b[i] = t3_hb[i] = 2;
-        c[i] = t3_hc[i] = 0;
+        a[i] = t3_ha[i] = 1. * i;
+        b[i] = t3_hb[i] = 2.;
+        c[i] = t3_hc[i] = 0.;
       }
 
       // Prefetch the data to the CPU
       int device = -1;
       cudaGetDevice(&device);
-      cudaMemPrefetchAsync(a, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
-      cudaMemPrefetchAsync(b, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
-      cudaMemPrefetchAsync(c, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(a, N * sizeof(double), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(b, N * sizeof(double), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(c, N * sizeof(double), cudaCpuDeviceId, NULL);
 
       int blockSize = 256;
       int numBlocks = (N + blockSize - 1) / blockSize;
@@ -224,20 +224,20 @@ usage:
 	    }
       t1 = get_elapsedtime();
 
-      cudaMemPrefetchAsync(a, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
-      cudaMemPrefetchAsync(b, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
-      cudaMemPrefetchAsync(c, N * sizeof(uint64_t), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(a, N * sizeof(double), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(b, N * sizeof(double), cudaCpuDeviceId, NULL);
+      cudaMemPrefetchAsync(c, N * sizeof(double), cudaCpuDeviceId, NULL);
       cudaDeviceSynchronize();
 
       // TEST 2
       // Batch Reduction all compute on GPU THEN reduction on GPU with CUDA Managed Memory
       t2 = get_elapsedtime();
-	    for(j=0; j < niter; j++)
+	    for(j = 0; j < niter; j++)
 	    {
 	    	kernel<<<numBlocks, blockSize>>>(c, a, b);
 	    }
 
- 	    for(j=0; j < niter; j++)
+ 	    for(j = 0; j < niter; j++)
 	    {
 	    	reduction(&res2, c, N);
 	    }
@@ -249,16 +249,16 @@ usage:
       // Ping-Pong at each test iteration CPU <-> GPU with Explicit GPU allocation (cudaMalloc) + Asynchronous cuda Memory copies
       t4 = get_elapsedtime();
 
-      cudaMemcpyAsync(t3_da, t3_ha, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
-      cudaMemcpyAsync(t3_db, t3_hb, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_da, t3_ha, N * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_db, t3_hb, N * sizeof(double), cudaMemcpyHostToDevice);
 
-	    for(j=0; j < niter; j++)
+	    for(j = 0; j < niter; j++)
 	    {
-        cudaMemcpyAsync(t3_dc, t3_hc, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+        cudaMemcpyAsync(t3_dc, t3_hc, N * sizeof(double), cudaMemcpyHostToDevice);
 
 	    	kernel<<<numBlocks, blockSize>>>(t3_dc, t3_da, t3_db);
 
-        cudaMemcpyAsync(t3_hc, t3_dc, N * sizeof(uint64_t), cudaMemcpyDeviceToHost);
+        cudaMemcpyAsync(t3_hc, t3_dc, N * sizeof(double), cudaMemcpyDeviceToHost);
         cudaStreamSynchronize(0);
 
 	    	reduction(&res3, t3_hc, N);
@@ -272,19 +272,19 @@ usage:
       // Batch Reduction all compute on GPU THEN reduction on GPU with Explicit GPU allocation (cudaMalloc) + Asynchronous cuda Memory copies
       t6 = get_elapsedtime();
 
-      cudaMemcpyAsync(t3_da, t3_ha, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
-      cudaMemcpyAsync(t3_db, t3_hb, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
-      cudaMemcpyAsync(t3_dc, t3_hc, N * sizeof(uint64_t), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_da, t3_ha, N * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_db, t3_hb, N * sizeof(double), cudaMemcpyHostToDevice);
+      cudaMemcpyAsync(t3_dc, t3_hc, N * sizeof(double), cudaMemcpyHostToDevice);
 
-	    for(j=0; j < niter; j++)
+	    for(j = 0; j < niter; j++)
 	    {
 	    	kernel<<<numBlocks, blockSize>>>(t3_dc, t3_da, t3_db);
 	    }
 
-      cudaMemcpyAsync(t3_hc, t3_dc, N * sizeof(uint64_t), cudaMemcpyDeviceToHost);
+      cudaMemcpyAsync(t3_hc, t3_dc, N * sizeof(double), cudaMemcpyDeviceToHost);
       cudaStreamSynchronize(0);
 
- 	    for(j=0; j < niter; j++)
+ 	    for(j = 0; j < niter; j++)
 	    {
 	    	reduction(&res4, t3_hc, N);
 	    }
